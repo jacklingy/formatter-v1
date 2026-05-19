@@ -1,9 +1,9 @@
 import os
 import re
 from docx import Document
-from docx.shared import Pt, Inches, Cm, RGBColor, Twips
-from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
-from docx.enum.style import WD_STYLE_TYPE
+from docx.shared import Pt, Twips, RGBColor, Emu, Cm, Inches
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.table import WD_TABLE_ALIGNMENT, WD_CELL_VERTICAL_ALIGNMENT
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 
@@ -20,8 +20,11 @@ class MarkdownConverter:
 
         output_path = self._get_output_path(md_file_path)
         doc = Document()
+        
         self._apply_document_settings(doc)
         self._parse_markdown(doc, md_content)
+        self._insert_page_numbers(doc)
+        
         doc.save(output_path)
         return output_path
 
@@ -135,6 +138,7 @@ class MarkdownConverter:
 
     def _add_heading(self, doc, text, level):
         style_config = self.config.get_heading_style(level)
+        
         para = doc.add_paragraph()
         run = para.add_run(text)
 
@@ -145,6 +149,7 @@ class MarkdownConverter:
         space_before = style_config.get('space_before', 120)
         space_after = style_config.get('space_after', 60)
         color = style_config.get('color', '000000')
+        first_line_indent = style_config.get('first_line_indent', 480)
 
         run.font.name = font_name
         run._element.rPr.rFonts.set(qn('w:eastAsia'), font_name)
@@ -163,6 +168,11 @@ class MarkdownConverter:
         para_format = para.paragraph_format
         para_format.space_before = Pt(space_before / 20)
         para_format.space_after = Pt(space_after / 20)
+        
+        if first_line_indent and first_line_indent > 0:
+            para_format.first_line_indent = Twips(first_line_indent)
+        else:
+            para_format.first_line_indent = Twips(0)
 
     def _add_paragraph(self, doc, text):
         para_style = self.config.get_paragraph_style()
@@ -175,18 +185,28 @@ class MarkdownConverter:
         font_name = font_settings.get('default_font', '宋体')
         font_size = font_settings.get('default_size', 12)
         color = font_settings.get('default_color', '000000')
+        line_spacing = para_style.get('line_spacing', 1.5)
+        first_indent = para_style.get('first_line_indent', 480)
+        alignment = para_style.get('alignment', 'left')
+        bold = para_style.get('bold', False)
+        space_before = para_style.get('space_before', 0)
+        space_after = para_style.get('space_after', 0)
 
         run.font.name = font_name
         run._element.rPr.rFonts.set(qn('w:eastAsia'), font_name)
         run.font.size = Pt(font_size)
         run.font.color.rgb = RGBColor.from_string(color)
+        run.font.bold = bold
 
-        line_spacing = para_style.get('line_spacing', 1.5)
-        first_indent = para_style.get('first_line_indent', 480)
-        space_before = para_style.get('space_before', 0)
-        space_after = para_style.get('space_after', 0)
-
+        alignment_map = {
+            'left': WD_ALIGN_PARAGRAPH.LEFT,
+            'center': WD_ALIGN_PARAGRAPH.CENTER,
+            'right': WD_ALIGN_PARAGRAPH.RIGHT,
+            'justify': WD_ALIGN_PARAGRAPH.JUSTIFY
+        }
+        
         para_format = para.paragraph_format
+        para_format.alignment = alignment_map.get(alignment, WD_ALIGN_PARAGRAPH.LEFT)
         para_format.line_spacing = line_spacing
         para_format.first_line_indent = Twips(first_indent)
         para_format.space_before = Pt(space_before / 20)
@@ -233,20 +253,166 @@ class MarkdownConverter:
         num_cols = len(rows_data[0])
         table = doc.add_table(rows=len(rows_data), cols=num_cols)
         table.style = 'Table Grid'
-
+        table.alignment = WD_TABLE_ALIGNMENT.CENTER
+        
+        self._set_table_auto_fit(table)
+        
         table_style_config = self.config.get_table_style()
 
-        for i, row_data in enumerate(rows_data):
-            row = table.rows[i]
-            for j, cell_text in enumerate(row_data):
-                if j < len(row.cells):
-                    cell = row.cells[j]
+        for row_idx, row_data in enumerate(rows_data):
+            row = table.rows[row_idx]
+            is_header_row = (row_idx == 0)
+            
+            if is_header_row:
+                style = table_style_config.get('header', {})
+            else:
+                style = table_style_config.get('body', {})
+            
+            font_name = style.get('font_name', '宋体')
+            font_size = style.get('font_size', 10.5)
+            bold = style.get('bold', False)
+            bg_color = style.get('background_color', [255, 255, 255])
+            text_align = style.get('text_alignment', 'center')
+            
+            row.height_rule = None
+            
+            for col_idx, cell_text in enumerate(row_data):
+                if col_idx < len(row.cells):
+                    cell = row.cells[col_idx]
+                    cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+                    
+                    self._set_cell_borders(cell)
+                    
+                    self._set_cell_background(cell, bg_color)
+                    
                     cell.text = cell_text
+                    
                     for paragraph in cell.paragraphs:
+                        if is_header_row:
+                            paragraph.paragraph_format.keep_with_next = True
+                        
+                        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        
                         for run in paragraph.runs:
-                            run.font.size = Pt(10)
-                            run.font.name = '宋体'
-                            run._element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
+                            run.font.name = font_name
+                            run._element.rPr.rFonts.set(qn('w:eastAsia'), font_name)
+                            run._element.rPr.rFonts.set(qn('w:ascii'), font_name)
+                            run._element.rPr.rFonts.set(qn('w:hAnsi'), font_name)
+                            run._element.rPr.rFonts.set(qn('w:cs'), font_name)
+                            
+                            run.font.size = Pt(font_size)
+                            run.font.bold = bold
+                            run.font.italic = False
+                            run.font.color.rgb = RGBColor(0, 0, 0)
+
+    def _set_table_auto_fit(self, table):
+        tbl = table._tbl
+        tblPr = tbl.tblPr if tbl.tblPr is not None else OxmlElement('w:tblPr')
+        
+        tblLayout = OxmlElement('w:tblLayout')
+        tblLayout.set(qn('w:type'), 'auto')
+        tblPr.append(tblLayout)
+        
+        if tbl.tblPr is None:
+            tbl.insert(0, tblPr)
+    
+    def _set_cell_borders(self, cell, border_color='000000', border_width=1):
+        tc = cell._tc
+        tcPr = tc.tcPr if tc.tcPr is not None else OxmlElement('w:tcPr')
+        
+        tcBorders = OxmlElement('w:tcBorders')
+        for border_name in ['top', 'left', 'bottom', 'right']:
+            border = OxmlElement(f'w:{border_name}')
+            border.set(qn('w:val'), 'single')
+            border.set(qn('w:sz'), str(border_width * 8))
+            border.set(qn('w:color'), border_color)
+            border.set(qn('w:space'), '0')
+            tcBorders.append(border)
+        
+        tcPr.append(tcBorders)
+        
+        if tc.tcPr is None:
+            tc.insert(0, tcPr)
+    
+    def _set_cell_background(self, cell, rgb_color):
+        tc = cell._tc
+        tcPr = tc.tcPr if tc.tcPr is not None else OxmlElement('w:tcPr')
+        
+        shd = OxmlElement('w:shd')
+        shd.set(qn('w:val'), 'clear')
+        shd.set(qn('w:color'), 'auto')
+        
+        r, g, b = rgb_color
+        hex_color = '{:02X}{:02X}{:02X}'.format(r, g, b)
+        shd.set(qn('w:fill'), hex_color)
+        
+        tcPr.append(shd)
+        
+        if tc.tcPr is None:
+            tc.insert(0, tcPr)
+
+    def _insert_page_numbers(self, doc):
+        page_number_config = self.config.get_page_number_settings()
+        
+        if not page_number_config.get('enabled', False):
+            return
+        
+        position = page_number_config.get('position', 'bottom_center')
+        font_name = page_number_config.get('font_name', '宋体')
+        chinese_font = page_number_config.get('chinese_font', '宋体')
+        western_font = page_number_config.get('western_font', 'Times New Roman')
+        font_size = page_number_config.get('font_size', 10.5)
+        bold = page_number_config.get('bold', False)
+        format_str = page_number_config.get('format', '{n}')
+        start_from = page_number_config.get('start_from', 1)
+        show_on_first = page_number_config.get('show_on_first_page', True)
+        
+        for section_idx, section in enumerate(doc.sections):
+            footer = section.footer
+            footer.is_linked_to_previous = False
+            
+            if len(footer.paragraphs) == 0:
+                footer.add_paragraph()
+            
+            paragraph = footer.paragraphs[0]
+            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            
+            self._add_page_number_field(paragraph, start_from, font_name, chinese_font, 
+                                       western_font, font_size, bold, format_str)
+
+    def _add_page_number_field(self, paragraph, start_from, font_name, chinese_font, 
+                               western_font, font_size, bold, format_str):
+        run = paragraph.add_run()
+        
+        fld_char_begin = OxmlElement('w:fldChar')
+        fld_char_begin.set(qn('w:fldCharType'), 'begin')
+        
+        instr_text = OxmlElement('w:instrText')
+        field_code = ' PAGE '
+        if start_from != 1:
+            field_code = f' PAGE \\* MERGEFORMAT '
+        instr_text.text = field_code
+        
+        fld_char_separate = OxmlElement('w:fldChar')
+        fld_char_separate.set(qn('w:fldCharType'), 'separate')
+        
+        fld_char_end = OxmlElement('w:fldChar')
+        fld_char_end.set(qn('w:fldCharType'), 'end')
+        
+        run._r.append(fld_char_begin)
+        run._r.append(instr_text)
+        run._r.append(fld_char_separate)
+        run._r.append(fld_char_end)
+        
+        run.font.name = font_name
+        run._element.rPr.rFonts.set(qn('w:eastAsia'), chinese_font)
+        run._element.rPr.rFonts.set(qn('w:ascii'), western_font)
+        run._element.rPr.rFonts.set(qn('w:hAnsi'), western_font)
+        run._element.rPr.rFonts.set(qn('w:cs'), western_font)
+        
+        run.font.size = Pt(font_size)
+        run.font.bold = bold
+        run.font.color.rgb = RGBColor(0, 0, 0)
 
     def _process_inline_formatting(self, text):
         text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)

@@ -19,7 +19,7 @@ def main():
             sys.executable, '-m', 'PyInstaller',
             '--onefile',
             '--windowed',
-            '--name', '文档格式一键转换器V1.1',
+            '--name', '文档格式一键转换器V1.3-RELEASE',
             'main.py',
             '--noconfirm'
         ], capture_output=True, text=True, encoding='utf-8')
@@ -30,7 +30,7 @@ def main():
             print("  打包成功！")
             print("=" * 60)
             print()
-            exe_path = os.path.join('dist', '文档格式一键转换器V1.1.exe')
+            exe_path = os.path.join('dist', '文档格式一键转换器V1.3-RELEASE.exe')
             if os.path.exists(exe_path):
                 print(f"可执行文件位置：")
                 print(f"  {os.path.abspath(exe_path)}")

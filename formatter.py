@@ -284,15 +284,39 @@ class WordFormatter:
             paragraph = footer.paragraphs[0]
             paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
             
-            run = paragraph.add_run()
-            run.text = str(start_from + section_idx) if section_idx == 0 else ''
-            
-            run.font.name = font_name
-            run._element.rPr.rFonts.set(qn('w:eastAsia'), chinese_font)
-            run._element.rPr.rFonts.set(qn('w:ascii'), western_font)
-            run._element.rPr.rFonts.set(qn('w:hAnsi'), western_font)
-            run._element.rPr.rFonts.set(qn('w:cs'), western_font)
-            
-            run.font.size = Pt(font_size)
-            run.font.bold = bold
-            run.font.color.rgb = RGBColor(0, 0, 0)
+            self._add_page_number_field(paragraph, start_from, font_name, chinese_font, 
+                                       western_font, font_size, bold, format_str)
+
+    def _add_page_number_field(self, paragraph, start_from, font_name, chinese_font, 
+                               western_font, font_size, bold, format_str):
+        run = paragraph.add_run()
+        
+        fld_char_begin = OxmlElement('w:fldChar')
+        fld_char_begin.set(qn('w:fldCharType'), 'begin')
+        
+        instr_text = OxmlElement('w:instrText')
+        field_code = ' PAGE '
+        if start_from != 1:
+            field_code = f' PAGE \\* MERGEFORMAT '
+        instr_text.text = field_code
+        
+        fld_char_separate = OxmlElement('w:fldChar')
+        fld_char_separate.set(qn('w:fldCharType'), 'separate')
+        
+        fld_char_end = OxmlElement('w:fldChar')
+        fld_char_end.set(qn('w:fldCharType'), 'end')
+        
+        run._r.append(fld_char_begin)
+        run._r.append(instr_text)
+        run._r.append(fld_char_separate)
+        run._r.append(fld_char_end)
+        
+        run.font.name = font_name
+        run._element.rPr.rFonts.set(qn('w:eastAsia'), chinese_font)
+        run._element.rPr.rFonts.set(qn('w:ascii'), western_font)
+        run._element.rPr.rFonts.set(qn('w:hAnsi'), western_font)
+        run._element.rPr.rFonts.set(qn('w:cs'), western_font)
+        
+        run.font.size = Pt(font_size)
+        run.font.bold = bold
+        run.font.color.rgb = RGBColor(0, 0, 0)
