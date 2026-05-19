@@ -1,0 +1,128 @@
+document:
+  page_margin:
+    top: 1440
+    bottom: 1440
+    left: 1800
+    right: 1800
+font_settings:
+  default_font: 仿宋_GB2312
+  default_size: 12
+  default_color: '000000'
+heading_styles:
+  heading1:
+    font_name: 宋体
+    font_size: 18
+    bold: true
+    alignment: center
+    first_line_indent: 0
+    space_before: 240
+    space_after: 120
+    color: '000000'
+  heading2:
+    font_name: 黑体
+    font_size: 12
+    bold: true
+    alignment: justify
+    first_line_indent: 480
+    space_before: 200
+    space_after: 100
+    color: '000000'
+  heading3:
+    font_name: 楷体_GB2312
+    font_size: 12
+    bold: true
+    alignment: justify
+    first_line_indent: 480
+    space_before: 160
+    space_after: 80
+    color: '000000'
+  heading4:
+    font_name: 仿宋_GB2312
+    font_size: 12
+    bold: true
+    alignment: justify
+    first_line_indent: 480
+    space_before: 120
+    space_after: 60
+    color: '000000'
+  heading5:
+    font_name: 仿宋_GB2312
+    font_size: 12
+    bold: true
+    alignment: justify
+    first_line_indent: 480
+    space_before: 100
+    space_after: 50
+    color: '000000'
+  heading6:
+    font_name: 仿宋_GB2312
+    font_size: 12
+    bold: true
+    alignment: justify
+    first_line_indent: 480
+    space_before: 80
+    space_after: 40
+    color: '000000'
+paragraph_style:
+  line_spacing: 1.5
+  alignment: justify
+  first_line_indent: 480
+  bold: false
+  space_before: 0
+  space_after: 0
+list_style:
+  bullet_char: •
+  numbered_format: '%d.'
+  indent_left: 720
+  space_between_items: 60
+page_number:
+  enabled: true
+  position: bottom_center
+  font_name: 宋体
+  chinese_font: 宋体
+  western_font: Times New Roman
+  font_size: 10.5
+  bold: true
+  format: '{n}'
+  start_from: 1
+  show_on_first_page: true
+number_format:
+  thousands_separator: true
+  separator_char: ','
+  decimal_point: .
+  min_decimal_places: -1
+  max_decimal_places: -1
+  handle_negative: true
+  pattern: ^-?\\d{1,3}(,\\d{3})*(\\.\\d+)?$
+  ignore_patterns:
+  - \\b\\d{4}\\b
+  - v\\d+\\.\\d+\\.\\d+
+  - \\d{11}
+  - \\d{15,18}
+  - \\d+-\\d+-\\d+
+table_style:
+  border_color: '000000'
+  border_width: 1
+  cell_padding: 100
+  auto_fit: true
+  width_strategy: auto
+  min_column_width: 1080
+  max_column_width: 4320
+  header:
+    font_name: 宋体
+    font_size: 10.5
+    bold: true
+    background_color:
+    - 217
+    - 217
+    - 217
+    text_alignment: center
+  body:
+    font_name: 宋体
+    font_size: 10.5
+    bold: false
+    background_color:
+    - 255
+    - 255
+    - 255
+    text_alignment: center

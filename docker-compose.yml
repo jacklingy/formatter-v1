@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  doc-formatter:
+    build: .
+    image: doc-formatter:v1
+    container_name: doc-formatter-app
+    restart: unless-stopped
+    
+    environment:
+      - DISPLAY=${DISPLAY:-:0}
+      - TZ=Asia/Shanghai
+      - LANG=C.UTF-8
+      - LC_ALL=C.UTF-8
+    
+    volumes:
+      # 文档目录（根据需要修改路径）
+      - ./documents:/app/documents:rw
+      # 配置文件（可选）
+      - ./format_config.yaml:/app/format_config.yaml:ro
+      # X11 socket（GUI模式需要，Linux桌面环境）
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    
+    # 资源限制
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '1.0'
+        reservations:
+          memory: 256M
+          cpus: '0.5'
+    
+    # 日志配置
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    
+    # 安全选项
+    security_opt:
+      - no-new-privileges:true
+    
+    # 只读根文件系统（可选，取消注释启用）
+    # read_only: true
+    # tmpfs:
+    #   - /tmp:size=100M,mode=1777
+
+# 可选：定义持久化卷（生产环境推荐）
+volumes:
+  documents-data:
+    driver: local
+    
+networks:
+  default:
+    name: doc-formatter-network
