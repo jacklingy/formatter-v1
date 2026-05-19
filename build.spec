@@ -22,7 +22,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='文档格式一键转换器 V1.3-RELEASE',
+    name='文档格式一键转换器 V1.4.2',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

@@ -1,12 +1,12 @@
 #!/bin/bash
 
-# Linux 打包脚本 - 文档格式一键转换器 V1.1
+# Linux 打包脚本 - 文档格式一键转换器 V1.4.2
 # 使用方法：chmod +x build_linux.sh && ./build_linux.sh
 
 set -e
 
 echo "╔══════════════════════════════════════════════╗"
-echo "║   文档格式一键转换器 V1.1 - Linux 打包工具     ║"
+echo "║   文档格式一键转换器 V1.4.2 - Linux 打包工具     ║"
 echo "╚══════════════════════════════════════════════╝"
 echo ""
 
@@ -93,7 +93,7 @@ echo ""
 pyinstaller \
     --onefile \
     --windowed \
-    --name "文档格式一键转换器 V1.1" \
+    --name "文档格式一键转换器V1.4.2" \
     --noconfirm \
     main.py
 
@@ -103,8 +103,8 @@ if [ $? -eq 0 ]; then
     echo "║              ✅ 打包成功！                  ║"
     echo "╚══════════════════════════════════════════════╝"
     echo ""
-    
-    EXE_PATH="dist/文档格式一键转换器 V1.1"
+
+    EXE_PATH="dist/文档格式一键转换器V1.4.2"
     
     if [ -f "$EXE_PATH" ]; then
         FILE_SIZE=$(du -h "$EXE_PATH" | cut -f1)
@@ -124,14 +124,14 @@ if [ $? -eq 0 ]; then
     echo ""
     echo "  方式1：直接运行"
     echo "    cd dist"
-    echo "    ./文档格式一键转换器V1"
+    echo "    ./文档格式一键转换器V1.4.2"
     echo ""
     echo "  方式2：创建桌面快捷方式（可选）"
     echo "    见 README_LINUX.md"
     echo ""
     echo "  方式3：复制到系统PATH目录"
-    echo "    sudo cp dist/文档格式一键转换器V1 /usr/local/bin/"
-    echo "    文档格式一键转换器V1"
+    echo "    sudo cp dist/文档格式一键转换器V1.4.2 /usr/local/bin/"
+    echo "    文档格式一键转换器V1.4.2"
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "⚠️  注意事项："

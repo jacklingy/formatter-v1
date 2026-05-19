@@ -1,10 +1,11 @@
 import os
 import re
+import urllib.request
 from docx import Document
 from docx.shared import Pt, Twips, RGBColor, Emu, Cm, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_TABLE_ALIGNMENT, WD_CELL_VERTICAL_ALIGNMENT
-from docx.oxml.ns import qn
+from docx.oxml.ns import qn, nsmap
 from docx.oxml import OxmlElement
 
 class MarkdownConverter:
@@ -48,6 +49,8 @@ class MarkdownConverter:
         in_list = False
         list_type = None
         list_items = []
+        in_blockquote = False
+        blockquote_lines = []
 
         while i < len(lines):
             line = lines[i].rstrip()
@@ -58,25 +61,109 @@ class MarkdownConverter:
                     self._add_list(doc, list_type, list_items)
                     list_items = []
                     in_list = False
+                if in_blockquote and blockquote_lines:
+                    self._add_blockquote(doc, '\n'.join(blockquote_lines))
+                    blockquote_lines = []
+                    in_blockquote = False
+                
                 level = len(heading_match.group(1))
                 text = heading_match.group(2).strip()
                 self._add_heading(doc, text, level)
                 i += 1
                 continue
 
-            if line.startswith('- ') or line.startswith('* '):
+            image_match = re.match(r'^!\[([^\]]*)\]\(([^)]+)\)$', line)
+            if image_match:
+                if in_list and list_items:
+                    self._add_list(doc, list_type, list_items)
+                    list_items = []
+                    in_list = False
+                if in_blockquote and blockquote_lines:
+                    self._add_blockquote(doc, '\n'.join(blockquote_lines))
+                    blockquote_lines = []
+                    in_blockquote = False
+                
+                alt_text = image_match.group(1)
+                image_url = image_match.group(2)
+                self._add_image(doc, image_url, alt_text)
+                i += 1
+                continue
+
+            if line.startswith('---') or line.startswith('***') or line.startswith('___'):
+                if in_list and list_items:
+                    self._add_list(doc, list_type, list_items)
+                    list_items = []
+                    in_list = False
+                if in_blockquote and blockquote_lines:
+                    self._add_blockquote(doc, '\n'.join(blockquote_lines))
+                    blockquote_lines = []
+                    in_blockquote = False
+                    
+                self._add_horizontal_rule(doc)
+                i += 1
+                continue
+
+            if line.startswith('>'):
+                if in_list and list_items:
+                    self._add_list(doc, list_type, list_items)
+                    list_items = []
+                    in_list = False
+                
+                if not in_blockquote:
+                    in_blockquote = True
+                    blockquote_lines = []
+                
+                quote_text = line[1:].strip() if len(line) > 1 else ''
+                blockquote_lines.append(quote_text)
+                i += 1
+                continue
+
+            task_match = re.match(r'^- \[([ xX])\]\s*(.+)$', line)
+            if task_match:
+                if in_blockquote and blockquote_lines:
+                    self._add_blockquote(doc, '\n'.join(blockquote_lines))
+                    blockquote_lines = []
+                    in_blockquote = False
+                    
+                if in_list and list_type != 'task':
+                    self._add_list(doc, list_type, list_items)
+                    list_items = []
+                
+                in_list = True
+                list_type = 'task'
+                checked = task_match.group(1).strip().lower() == 'x'
+                item_text = task_match.group(2).strip()
+                list_items.append({'text': item_text, 'checked': checked})
+                i += 1
+                continue
+
+            stripped_line = line.lstrip()
+            
+            if stripped_line.startswith('- ') or stripped_line.startswith('* '):
+                if in_blockquote and blockquote_lines:
+                    self._add_blockquote(doc, '\n'.join(blockquote_lines))
+                    blockquote_lines = []
+                    in_blockquote = False
+                    
                 if not in_list or list_type != 'bullet':
                     if in_list and list_items:
                         self._add_list(doc, list_type, list_items)
                         list_items = []
                     in_list = True
                     list_type = 'bullet'
-                list_items.append(line[2:].strip())
+                item_text = stripped_line[2:].strip()
+                indent_level = len(line) - len(stripped_line)
+                list_items.append({'text': item_text, 'indent': indent_level})
                 i += 1
                 continue
 
             numbered_match = re.match(r'^\d+\.\s+(.+)$', line)
             if numbered_match:
+                if in_blockquote and blockquote_lines:
+                    self._add_blockquote(doc, '\n'.join(blockquote_lines))
+                    blockquote_lines = []
+                    in_blockquote = False
+                    
                 if not in_list or list_type != 'numbered':
                     if in_list and list_items:
                         self._add_list(doc, list_type, list_items)
@@ -91,6 +178,11 @@ class MarkdownConverter:
                 self._add_list(doc, list_type, list_items)
                 list_items = []
                 in_list = False
+
+            if in_blockquote and blockquote_lines:
+                self._add_blockquote(doc, '\n'.join(blockquote_lines))
+                blockquote_lines = []
+                in_blockquote = False
 
             if line.strip() == '':
                 i += 1
@@ -113,8 +205,7 @@ class MarkdownConverter:
                 table_lines = [line]
                 i += 1
                 while i < len(lines) and (lines[i].startswith('|') or re.match(r'^[\|\s\-:]+$', lines[i])):
-                    if not re.match(r'^[\|\s\-:]+$', lines[i]):
-                        table_lines.append(lines[i])
+                    table_lines.append(lines[i])
                     i += 1
                 self._add_table(doc, table_lines)
                 continue
@@ -126,44 +217,43 @@ class MarkdownConverter:
                   not lines[i + 1].startswith('*') and \
                   not re.match(r'^\d+\.', lines[i + 1]) and \
                   not lines[i + 1].startswith('|') and \
-                  not lines[i + 1].startswith('```'):
+                  not lines[i + 1].startswith('```') and \
+                  not lines[i + 1].startswith('>') and \
+                  not (lines[i + 1].startswith('---') or lines[i + 1].startswith('***')) and \
+                  not re.match(r'^!\[.*\]\(.+\)', lines[i + 1]):
                 i += 1
                 text += '\n' + lines[i]
 
-            self._add_paragraph(doc, text)
+            self._add_formatted_paragraph(doc, text)
             i += 1
 
         if in_list and list_items:
             self._add_list(doc, list_type, list_items)
+        if in_blockquote and blockquote_lines:
+            self._add_blockquote(doc, '\n'.join(blockquote_lines))
 
     def _add_heading(self, doc, text, level):
         style_config = self.config.get_heading_style(level)
         
         para = doc.add_paragraph()
-        run = para.add_run(text)
+        self._apply_inline_formatting(para, text)
 
         font_name = style_config.get('font_name', '黑体')
         font_size = style_config.get('font_size', 14)
         bold = style_config.get('bold', True)
-        alignment = style_config.get('alignment', 'left')
         space_before = style_config.get('space_before', 120)
         space_after = style_config.get('space_after', 60)
         color = style_config.get('color', '000000')
         first_line_indent = style_config.get('first_line_indent', 480)
 
-        run.font.name = font_name
-        run._element.rPr.rFonts.set(qn('w:eastAsia'), font_name)
-        run.font.size = Pt(font_size)
-        run.font.bold = bold
-        run.font.color.rgb = RGBColor.from_string(color)
+        for run in para.runs:
+            run.font.name = font_name
+            run._element.rPr.rFonts.set(qn('w:eastAsia'), font_name)
+            run.font.size = Pt(font_size)
+            run.font.bold = bold
+            run.font.color.rgb = RGBColor.from_string(color)
 
-        alignment_map = {
-            'left': WD_ALIGN_PARAGRAPH.LEFT,
-            'center': WD_ALIGN_PARAGRAPH.CENTER,
-            'right': WD_ALIGN_PARAGRAPH.RIGHT,
-            'justify': WD_ALIGN_PARAGRAPH.JUSTIFY
-        }
-        para.alignment = alignment_map.get(alignment, WD_ALIGN_PARAGRAPH.LEFT)
+        para.alignment = WD_ALIGN_PARAGRAPH.LEFT
 
         para_format = para.paragraph_format
         para_format.space_before = Pt(space_before / 20)
@@ -174,83 +264,333 @@ class MarkdownConverter:
         else:
             para_format.first_line_indent = Twips(0)
 
-    def _add_paragraph(self, doc, text):
+    def _add_formatted_paragraph(self, doc, text):
         para_style = self.config.get_paragraph_style()
         font_settings = self.config.get_font_settings()
 
         para = doc.add_paragraph()
-        processed_text = self._process_inline_formatting(text)
-        run = para.add_run(processed_text)
+        self._apply_inline_formatting(para, text)
 
         font_name = font_settings.get('default_font', '宋体')
         font_size = font_settings.get('default_size', 12)
         color = font_settings.get('default_color', '000000')
         line_spacing = para_style.get('line_spacing', 1.5)
         first_indent = para_style.get('first_line_indent', 480)
-        alignment = para_style.get('alignment', 'left')
-        bold = para_style.get('bold', False)
         space_before = para_style.get('space_before', 0)
         space_after = para_style.get('space_after', 0)
 
-        run.font.name = font_name
-        run._element.rPr.rFonts.set(qn('w:eastAsia'), font_name)
-        run.font.size = Pt(font_size)
-        run.font.color.rgb = RGBColor.from_string(color)
-        run.font.bold = bold
+        for run in para.runs:
+            if not run.font.name:
+                run.font.name = font_name
+                run._element.rPr.rFonts.set(qn('w:eastAsia'), font_name)
+            if not run.font.size:
+                run.font.size = Pt(font_size)
+            if not run.font.color.rgb or str(run.font.color.rgb) == '000000':
+                run.font.color.rgb = RGBColor.from_string(color)
 
-        alignment_map = {
-            'left': WD_ALIGN_PARAGRAPH.LEFT,
-            'center': WD_ALIGN_PARAGRAPH.CENTER,
-            'right': WD_ALIGN_PARAGRAPH.RIGHT,
-            'justify': WD_ALIGN_PARAGRAPH.JUSTIFY
-        }
-        
         para_format = para.paragraph_format
-        para_format.alignment = alignment_map.get(alignment, WD_ALIGN_PARAGRAPH.LEFT)
+        para_format.alignment = WD_ALIGN_PARAGRAPH.LEFT
         para_format.line_spacing = line_spacing
         para_format.first_line_indent = Twips(first_indent)
         para_format.space_before = Pt(space_before / 20)
         para_format.space_after = Pt(space_after / 20)
 
+    def _apply_inline_formatting(self, paragraph, text):
+        pattern = r'(\*\*.*?\*\*|\*.*?\*|~~.*?~~|`[^`]+|!\[([^\]]*)\]\(([^)]+)\)|\[([^\]]+)\]\(([^)]+)\))'
+        parts = re.split(pattern, text)
+        
+        i = 0
+        while i < len(parts):
+            part = parts[i]
+            
+            if not part:
+                i += 1
+                continue
+            
+            if part.startswith('**') and part.endswith('**'):
+                run_text = part[2:-2]
+                run = paragraph.add_run(run_text)
+                run.bold = True
+            elif part.startswith('*') and part.endswith('*') and not part.startswith('**'):
+                run_text = part[1:-1]
+                run = paragraph.add_run(run_text)
+                run.italic = True
+            elif part.startswith('~~') and part.endswith('~~'):
+                run_text = part[2:-2]
+                run = paragraph.add_run(run_text)
+                run.font.strike = True
+            elif part.startswith('`') and part.endswith('`'):
+                run_text = part[1:-1]
+                run = paragraph.add_run(run_text)
+                run.font.name = 'Consolas'
+                run.font.size = Pt(10)
+            elif part.startswith('![') and '](http' in part or '](./' in part:
+                img_match = re.match(r'!\[([^\]]*)\]\(([^)]+)\)', part)
+                if img_match:
+                    alt_text = img_match.group(1) or ''
+                    url = img_match.group(2) or ''
+                    self._add_inline_image(paragraph, url, alt_text)
+                else:
+                    run = paragraph.add_run(part)
+            elif part.startswith('[') and '](http' in part or '](./' in part:
+                link_match = re.match(r'\[([^\]]+)\]\(([^)]+)\)', part)
+                if link_match:
+                    link_text = link_match.group(1) or ''
+                    url = link_match.group(2) or ''
+                    self._add_hyperlink_to_paragraph(paragraph, link_text, url)
+                else:
+                    run = paragraph.add_run(part)
+            else:
+                run = paragraph.add_run(part)
+            
+            i += 1
+
+    def _add_image(self, doc, image_url, alt_text=''):
+        try:
+            para = doc.add_paragraph()
+            para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            
+            if image_url.startswith(('http://', 'https://')):
+                temp_path = f'temp_image_{hash(image_url)}.png'
+                try:
+                    urllib.request.urlretrieve(image_url, temp_path)
+                    run = para.add_run()
+                    run.add_picture(temp_path, width=Inches(4.5))
+                    
+                    if alt_text:
+                        caption_para = doc.add_paragraph()
+                        caption_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        caption_run = caption_para.add_run(alt_text)
+                        caption_run.font.size = Pt(9)
+                        caption_run.font.color.rgb = RGBColor(100, 100, 100)
+                        
+                finally:
+                    if os.path.exists(temp_path):
+                        os.remove(temp_path)
+            elif os.path.exists(image_url):
+                run = para.add_run()
+                run.add_picture(image_url, width=Inches(4.5))
+                
+                if alt_text:
+                    caption_para = doc.add_paragraph()
+                    caption_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    caption_run = caption_para.add_run(alt_text)
+                    caption_run.font.size = Pt(9)
+                    caption_run.font.color.rgb = RGBColor(100, 100, 100)
+            else:
+                error_para = doc.add_paragraph()
+                error_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                error_run = error_para.add_run(f'[图片未找到: {alt_text or image_url}]')
+                error_run.font.color.rgb = RGBColor(255, 0, 0)
+                error_run.font.italic = True
+                
+        except Exception as e:
+            error_para = doc.add_paragraph()
+            error_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            error_run = error_para.add_run(f'[图片加载失败: {str(e)}]')
+            error_run.font.color.rgb = RGBColor(255, 0, 0)
+            error_run.font.italic = True
+
+    def _add_inline_image(self, paragraph, image_url, alt_text=''):
+        try:
+            run = paragraph.add_run()
+            
+            if image_url.startswith(('http://', 'https://')):
+                temp_path = f'temp_inline_image_{hash(image_url)}.png'
+                try:
+                    urllib.request.urlretrieve(image_url, temp_path)
+                    run.add_picture(temp_path, height=Pt(16))
+                finally:
+                    if os.path.exists(temp_path):
+                        os.remove(temp_path)
+            elif os.path.exists(image_url):
+                run.add_picture(image_url, height=Pt(16))
+            else:
+                text_run = paragraph.add_run(f'[{alt_text or "图片"}]')
+                text_run.font.color.rgb = RGBColor(255, 0, 0)
+                return
+                
+        except Exception as e:
+            text_run = paragraph.add_run(f'[{alt_text or "图片"}]')
+            text_run.font.color.rgb = RGBColor(255, 0, 0)
+
+    def _add_hyperlink_to_paragraph(self, paragraph, text, url):
+        hyperlink = OxmlElement('w:hyperlink')
+        hyperlink.set(qn('r:id'), url)
+
+        new_run = OxmlElement('w:r')
+        rPr = OxmlElement('w:rPr')
+
+        color = OxmlElement('w:color')
+        color.set(qn('w:val'), '0563C1')
+        rPr.append(color)
+
+        underline = OxmlElement('w:u')
+        underline.set(qn('w:val'), 'single')
+        rPr.append(underline)
+
+        new_run.append(rPr)
+        new_run.text = text
+        hyperlink.append(new_run)
+
+        paragraph._p.append(hyperlink)
+
+        rel = paragraph.part.relate_to(url, 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink', is_external=True)
+
     def _add_list(self, doc, list_type, items):
         list_style = self.config.get_list_style()
         font_settings = self.config.get_font_settings()
 
-        for item in items:
-            para = doc.add_paragraph()
-            prefix = list_style.get('bullet_char', '•') + ' ' if list_type == 'bullet' else ''
-            run = para.add_run(f"{prefix}{item}")
+        if list_type == 'task':
+            for item in items:
+                para = doc.add_paragraph()
+                
+                checkbox = '☑' if item['checked'] else '☐'
+                self._apply_inline_formatting(para, f"{checkbox} {item['text']}")
 
-            font_name = font_settings.get('default_font', '宋体')
-            font_size = font_settings.get('default_size', 12)
+                font_name = font_settings.get('default_font', '宋体')
+                font_size = font_settings.get('default_size', 12)
 
-            run.font.name = font_name
-            run._element.rPr.rFonts.set(qn('w:eastAsia'), font_name)
-            run.font.size = Pt(font_size)
+                for run in para.runs:
+                    if not run.font.name or run.font.name == 'Calibri':
+                        run.font.name = font_name
+                        run._element.rPr.rFonts.set(qn('w:eastAsia'), font_name)
+                    if not run.font.size:
+                        run.font.size = Pt(font_size)
 
-            indent_left = list_style.get('indent_left', 720)
-            para.paragraph_format.left_indent = Twips(indent_left)
+                indent_left = list_style.get('indent_left', 720)
+                para.paragraph_format.left_indent = Twips(indent_left)
+                para.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        else:
+            for item in items:
+                para = doc.add_paragraph()
+                
+                if isinstance(item, dict):
+                    item_text = item['text']
+                    indent_level = item.get('indent', 0)
+                else:
+                    item_text = item
+                    indent_level = 0
+                
+                if list_type == 'bullet':
+                    prefix = list_style.get('bullet_char', '•') + ' '
+                else:
+                    prefix = ''
+                    
+                self._apply_inline_formatting(para, f"{prefix}{item_text}")
+
+                font_name = font_settings.get('default_font', '宋体')
+                font_size = font_settings.get('default_size', 12)
+
+                for run in para.runs:
+                    if not run.font.name or run.font.name == 'Calibri':
+                        run.font.name = font_name
+                        run._element.rPr.rFonts.set(qn('w:eastAsia'), font_name)
+                    if not run.font.size:
+                        run.font.size = Pt(font_size)
+
+                base_indent = list_style.get('indent_left', 720)
+                total_indent = base_indent + (indent_level * 360)
+                para.paragraph_format.left_indent = Twips(total_indent)
+                para.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.LEFT
+
+    def _add_blockquote(self, doc, text):
+        para = doc.add_paragraph()
+        self._apply_inline_formatting(para, text)
+
+        font_settings = self.config.get_font_settings()
+        font_name = font_settings.get('default_font', '宋体')
+        font_size = font_settings.get('default_size', 11)
+
+        for run in para.runs:
+            if not run.font.name:
+                run.font.name = font_name
+                run._element.rPr.rFonts.set(qn('w:eastAsia'), font_name)
+            if not run.font.size:
+                run.font.size = Pt(font_size)
+            run.font.color.rgb = RGBColor(80, 80, 80)
+            run.italic = True
+
+        para.paragraph_format.left_indent = Twips(720)
+        para.paragraph_format.right_indent = Twips(720)
+        para.paragraph_format.space_before = Pt(6)
+        para.paragraph_format.space_after = Pt(6)
+
+        border_para = OxmlElement('w:pBdr')
+        left_border = OxmlElement('w:left')
+        left_border.set(qn('w:val'), 'single')
+        left_border.set(qn('w:sz'), '18')
+        left_border.set(qn('w:color'), '808080')
+        left_border.set(qn('w:space'), '6')
+        border_para.append(left_border)
+        para._p.get_or_add_pPr().append(border_para)
+
+    def _add_horizontal_rule(self, doc):
+        para = doc.add_paragraph()
+        para.paragraph_format.space_before = Pt(12)
+        para.paragraph_format.space_after = Pt(12)
+
+        pBdr = OxmlElement('w:pBdr')
+        bottom = OxmlElement('w:bottom')
+        bottom.set(qn('w:val'), 'single')
+        bottom.set(qn('w:sz'), '12')
+        bottom.set(qn('w:color'), 'A0A0A0')
+        bottom.set(qn('w:space'), '2')
+        pBdr.append(bottom)
+        para._p.get_or_add_pPr().append(pBdr)
 
     def _add_code_block(self, doc, code, language=None):
         para = doc.add_paragraph()
         run = para.add_run(code)
         run.font.name = 'Consolas'
-        run.font.size = Pt(10)
+        run.font.size = Pt(9.5)
+        run.font.color.rgb = RGBColor(40, 40, 40)
         para.paragraph_format.left_indent = Twips(720)
+        para.paragraph_format.space_before = Pt(6)
+        para.paragraph_format.space_after = Pt(6)
+
+        shd = OxmlElement('w:shd')
+        shd.set(qn('w:val'), 'clear')
+        shd.set(qn('w:color'), 'auto')
+        shd.set(qn('w:fill'), 'F5F5F5')
+        para._p.get_or_add_pPr().append(shd)
 
     def _add_table(self, doc, table_lines):
-        if not table_lines:
+        if not table_lines or len(table_lines) < 1:
             return
 
         rows_data = []
-        for line in table_lines:
+        col_alignments = []
+        
+        separator_idx = None
+        for idx, line in enumerate(table_lines):
             cells = [cell.strip() for cell in line.split('|')[1:-1]]
+            
+            if re.match(r'^[\|\s\-:]+$', line):
+                separator_idx = idx
+                for cell in cells:
+                    cell = cell.strip()
+                    if ':' in cell:
+                        if cell.startswith(':') and cell.endswith(':'):
+                            col_alignments.append('center')
+                        elif cell.endswith(':'):
+                            col_alignments.append('right')
+                        else:
+                            col_alignments.append('left')
+                    else:
+                        col_alignments.append('center')
+                continue
+            
             rows_data.append(cells)
 
-        if len(rows_data) < 1:
+        if not rows_data:
             return
 
         num_cols = len(rows_data[0])
+        
+        while len(col_alignments) < num_cols:
+            col_alignments.append('center')
+
         table = doc.add_table(rows=len(rows_data), cols=num_cols)
         table.style = 'Table Grid'
         table.alignment = WD_TABLE_ALIGNMENT.CENTER
@@ -272,37 +612,58 @@ class MarkdownConverter:
             font_size = style.get('font_size', 10.5)
             bold = style.get('bold', False)
             bg_color = style.get('background_color', [255, 255, 255])
-            text_align = style.get('text_alignment', 'center')
             
             row.height_rule = None
             
             for col_idx, cell_text in enumerate(row_data):
-                if col_idx < len(row.cells):
-                    cell = row.cells[col_idx]
-                    cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+                if col_idx >= len(row.cells):
+                    continue
                     
-                    self._set_cell_borders(cell)
+                cell = row.cells[col_idx]
+                cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+                
+                self._set_cell_borders(cell)
+                self._set_cell_background(cell, bg_color)
+                
+                cell.text = ''
+                
+                para = cell.paragraphs[0]
+                
+                for run in para.runs:
+                    run._element.getparent().remove(run._element)
+                
+                self._apply_inline_formatting(para, cell_text)
+                
+                col_alignment = col_alignments[col_idx] if col_idx < len(col_alignments) else 'center'
+                
+                align_map = {
+                    'left': WD_ALIGN_PARAGRAPH.LEFT,
+                    'center': WD_ALIGN_PARAGRAPH.CENTER,
+                    'right': WD_ALIGN_PARAGRAPH.RIGHT
+                }
+                cell_alignment = align_map.get(col_alignment, WD_ALIGN_PARAGRAPH.CENTER)
+                
+                for paragraph in cell.paragraphs:
+                    if is_header_row:
+                        paragraph.paragraph_format.keep_with_next = True
                     
-                    self._set_cell_background(cell, bg_color)
+                    paragraph.alignment = cell_alignment
                     
-                    cell.text = cell_text
-                    
-                    for paragraph in cell.paragraphs:
-                        if is_header_row:
-                            paragraph.paragraph_format.keep_with_next = True
-                        
-                        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                        
-                        for run in paragraph.runs:
+                    for run in paragraph.runs:
+                        if not run.font.name:
                             run.font.name = font_name
                             run._element.rPr.rFonts.set(qn('w:eastAsia'), font_name)
                             run._element.rPr.rFonts.set(qn('w:ascii'), font_name)
                             run._element.rPr.rFonts.set(qn('w:hAnsi'), font_name)
                             run._element.rPr.rFonts.set(qn('w:cs'), font_name)
-                            
+                        
+                        if not run.font.size:
                             run.font.size = Pt(font_size)
+                        
+                        if is_header_row and not run.bold:
                             run.font.bold = bold
-                            run.font.italic = False
+                            
+                        if not run.font.color.rgb or str(run.font.color.rgb) == '000000':
                             run.font.color.rgb = RGBColor(0, 0, 0)
 
     def _set_table_auto_fit(self, table):
@@ -413,9 +774,3 @@ class MarkdownConverter:
         run.font.size = Pt(font_size)
         run.font.bold = bold
         run.font.color.rgb = RGBColor(0, 0, 0)
-
-    def _process_inline_formatting(self, text):
-        text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
-        text = re.sub(r'\*(.+?)\*', r'\1', text)
-        text = re.sub(r'`(.+?)`', r'\1', text)
-        return text

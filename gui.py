@@ -16,7 +16,7 @@ class MainWindow(Tk):
         self.init_ui()
 
     def init_ui(self):
-        self.title('文档格式一键转换器 V1.1')
+        self.title('文档格式一键转换器 V1.4.2')
         self.geometry('600x280')
         self.minsize(550, 250)
         self.configure(bg='#F0F0F0')
