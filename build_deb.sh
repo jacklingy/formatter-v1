@@ -70,6 +70,13 @@ if ! command -v dpkg-deb &> /dev/null; then
     exit 1
 fi
 
+# 检查 tkinter 是否可用
+if ! python3 -c "import tkinter" 2>/dev/null; then
+    log_error "python3-tk 未安装！"
+    log_info "请运行: sudo apt install python3-tk"
+    exit 1
+fi
+
 log_success "环境检查通过"
 
 # ==================== 步骤 2: 创建虚拟环境 ====================
@@ -114,6 +121,7 @@ pyinstaller \
     --hidden-import=config_manager \
     --hidden-import=converter \
     --hidden-import=formatter \
+    --collect-all tkinter \
     --add-data "format_config.yaml:." \
     main.py
 
