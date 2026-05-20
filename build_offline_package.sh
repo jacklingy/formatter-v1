@@ -63,19 +63,24 @@ download_python_dependencies() {
     
     mkdir -p "$PACKAGE_NAME/dependencies/wheels"
     
+    log_info "尝试下载预编译的 Wheel 包（优先）..."
+    
     pip3 download \
         --python-version 3 \
-        --only-binary=:all: \
+        --prefer-binary \
         --platform manylinux2014_x86_64 \
         --implementation cp \
         -d "$PACKAGE_NAME/dependencies/wheels" \
         -r requirements.txt \
-        2>&1 | grep -E "(Downloading|Saved|ERROR)" || true
+        2>&1 | tee /tmp/pip_download.log | grep -E "(Downloading|Saved|ERROR|Collecting)" || true
     
     WHEEL_COUNT=$(ls "$PACKAGE_NAME/dependencies/wheels"/*.whl 2>/dev/null | wc -l)
+    TAR_COUNT=$(ls "$PACKAGE_NAME/dependencies/wheels"/*.tar.gz 2>/dev/null | wc -l)
+    TOTAL_COUNT=$((WHEEL_COUNT + TAR_COUNT))
     
-    if [ "$WHEEL_COUNT" -eq 0 ]; then
-        log_warn "未下载到 wheel 包，尝试下载源码包..."
+    if [ "$TOTAL_COUNT" -lt 3 ]; then
+        log_warn "预编译包不足，尝试下载源码包..."
+        
         pip3 download \
             --no-binary=:all: \
             -d "$PACKAGE_NAME/dependencies/wheels" \
@@ -83,15 +88,54 @@ download_python_dependencies() {
             2>&1 | grep -E "(Downloading|Saved|ERROR)" || true
         
         WHEEL_COUNT=$(ls "$PACKAGE_NAME/dependencies/wheels"/*.whl 2>/dev/null | wc -l)
-        [ "$WHEEL_COUNT" -eq 0 ] && WHEEL_COUNT=$(ls "$PACKAGE_NAME/dependencies/wheels"/*.tar.gz 2>/dev/null | wc -l)
+        TAR_COUNT=$(ls "$PACKAGE_NAME/dependencies/wheels"/*.tar.gz 2>/dev/null | wc -l)
+        TOTAL_COUNT=$((WHEEL_COUNT + TAR_COUNT))
     fi
     
-    log_success "已下载 $WHEEL_COUNT 个依赖包"
+    if [ "$TOTAL_COUNT" -eq 0 ]; then
+        log_error "依赖包下载失败！请检查网络连接或手动下载"
+        log_info "您可以手动运行: pip3 download -d $PACKAGE_NAME/dependencies/wheels -r requirements.txt"
+        exit 1
+    fi
+    
+    log_success "已下载 $TOTAL_COUNT 个依赖包 ($WHEEL_COUNT 个 Wheel + $TAR_COUNT 个源码包)"
 }
 
 install_pyinstaller_and_build() {
+    log_info "创建临时虚拟环境（避免系统Python保护机制）..."
+    
+    VENV_DIR=".build_venv"
+    
+    if [ -d "$VENV_DIR" ]; then
+        rm -rf "$VENV_DIR"
+    fi
+    
+    python3 -m venv "$VENV_DIR"
+    
+    if [ ! -f "$VENV_DIR/bin/activate" ]; then
+        log_error "虚拟环境创建失败！"
+        log_info "可能原因: 缺少 python3-venv 模块"
+        log_info "请运行: sudo apt install python3.12-venv (或对应版本)"
+        exit 1
+    fi
+    
+    source "$VENV_DIR/bin/activate"
+    log_success "虚拟环境已创建并激活"
+    
+    log_info "升级 pip..."
+    pip install --upgrade pip -q 2>/dev/null || true
+    
     log_info "安装 PyInstaller..."
-    pip3 install pyinstaller==6.3.0 -q
+    pip install pyinstaller==6.3.0 -q
+    
+    if ! command -v pyinstaller &> /dev/null; then
+        log_error "PyInstaller 安装失败！"
+        deactivate
+        rm -rf "$VENV_DIR"
+        exit 1
+    fi
+    
+    log_success "PyInstaller 安装成功: $(pyinstaller --version)"
     
     log_info "打包可执行文件（这可能需要 2-5 分钟）..."
     
@@ -105,6 +149,8 @@ install_pyinstaller_and_build() {
     
     if [ ! -f "dist/文档格式一键转换器V${VERSION}" ]; then
         log_error "可执行文件打包失败！"
+        deactivate
+        rm -rf "$VENV_DIR"
         exit 1
     fi
     
@@ -112,6 +158,10 @@ install_pyinstaller_and_build() {
     
     FILE_SIZE=$(du -h "dist/文档格式一键转换器V${VERSION}" | cut -f1)
     log_success "可执行文件已生成: $FILE_SIZE"
+    
+    deactivate
+    rm -rf "$VENV_DIR"
+    log_info "临时虚拟环境已清理"
 }
 
 copy_project_files() {
