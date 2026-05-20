@@ -122,7 +122,7 @@ pyinstaller \
     --hidden-import=converter \
     --hidden-import=formatter \
     --collect-all tkinter \
-    --collect-data python-docx \
+    --collect-all python-docx \
     --add-data "format_config.yaml:." \
     main.py
 
