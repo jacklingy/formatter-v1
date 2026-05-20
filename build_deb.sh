@@ -107,6 +107,14 @@ pyinstaller \
     --name "${APP_NAME}" \
     --noconfirm \
     --clean \
+    --hidden-import=tkinter \
+    --hidden-import=tkinter.ttk \
+    --hidden-import=tkinter.messagebox \
+    --hidden-import=tkinter.filedialog \
+    --hidden-import=config_manager \
+    --hidden-import=converter \
+    --hidden-import=formatter \
+    --add-data "format_config.yaml:." \
     main.py
 
 if [ ! -f "dist/${APP_NAME}" ]; then
@@ -154,6 +162,20 @@ cat > "${DEB_ROOT}${INSTALL_DIR}/run.sh" << 'LAUNCHER'
 #!/bin/bash
 INSTALL_DIR="/opt/doc-formatter"
 cd "$INSTALL_DIR"
+
+# 设置环境变量
+export DISPLAY=${DISPLAY:-:0}
+export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+export PYTHONPATH="$INSTALL_DIR:$PYTHONPATH"
+
+# 检查tkinter
+if ! python3 -c "import tkinter" 2>/dev/null; then
+    echo "错误: tkinter未安装"
+    echo "请运行: sudo apt install python3-tk"
+    exit 1
+fi
+
+# 运行程序
 exec "./doc-formatter" "$@"
 LAUNCHER
 chmod 755 "${DEB_ROOT}${INSTALL_DIR}/run.sh"
@@ -174,12 +196,13 @@ Name=${APP_NAME_CN}
 Name[en]=Document Formatter
 Comment=Markdown to Word converter and document formatter
 Comment[zh_CN]=Markdown转Word文档格式化工具
-Exec=/opt/doc-formatter/run.sh %F
+Exec=/opt/doc-formatter/run.sh
 Icon=application-msword
 Terminal=false
 Type=Application
 Categories=Office;TextEditor;Utility;
 StartupNotify=true
+Path=/opt/doc-formatter
 MimeType=application/vnd.openxmlformats-officedocument.wordprocessingml.document;text/markdown;
 Keywords=word;markdown;formatter;converter;
 DESKTOP
@@ -214,6 +237,20 @@ log_info "已创建 control 文件"
 cat > "${DEB_ROOT}/DEBIAN/postinst" << POSTINST
 #!/bin/bash
 set -e
+
+# 检查必要的依赖
+check_dependency() {
+    if ! command -v "$1" &> /dev/null; then
+        echo "警告: $1 未安装，某些功能可能无法使用"
+    fi
+}
+
+# 检查Python和tkinter
+if ! python3 -c "import tkinter" 2>/dev/null; then
+    echo "错误: python3-tk 未安装"
+    echo "请运行: sudo apt install python3-tk"
+    exit 1
+fi
 
 # 更新桌面数据库
 if command -v update-desktop-database &> /dev/null; then
