@@ -126,7 +126,7 @@ install_pyinstaller_and_build() {
     pip install --upgrade pip -q 2>/dev/null || true
     
     log_info "安装 PyInstaller..."
-    pip install pyinstaller==6.3.0 -q
+    pip install pyinstaller -q
     
     if ! command -v pyinstaller &> /dev/null; then
         log_error "PyInstaller 安装失败！"

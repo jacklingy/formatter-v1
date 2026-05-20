@@ -97,7 +97,7 @@ log_info "安装项目依赖..."
 pip install -r requirements.txt -q
 
 log_info "安装 PyInstaller..."
-pip install pyinstaller==6.3.0 -q
+pip install pyinstaller -q
 
 log_info "开始打包（约需 2-5 分钟）..."
 pyinstaller \
